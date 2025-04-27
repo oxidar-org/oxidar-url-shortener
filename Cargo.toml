@@ -1,0 +1,13 @@
+[package]
+name = "url-axum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8.3"
+shuttle-axum = "0.53.0"
+shuttle-runtime = "0.53.0"
+tokio = "1.28.2"
+url = "2.5.4"
+color-eyre = "0.6.2"
+rand = "0.9.1"
