@@ -36,3 +36,38 @@ impl TryFrom<&str> for Token {
         Ok(Self(value.to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_token_length() {
+        assert_eq!(Token::TOKEN_LENGTH, 6);
+    }
+
+    #[test]
+    fn test_token_generation() {
+        let token = Token::default();
+        assert_eq!(token.as_str().len(), Token::TOKEN_LENGTH);
+    }
+
+    #[test]
+    fn test_token_generation_is_random() {
+        let token1 = Token::default();
+        let token2 = Token::default();
+        assert_ne!(token1, token2);
+    }
+
+    #[test]
+    fn test_token_generation_is_alphanumeric() {
+        let token = Token::default();
+        assert!(token.as_str().chars().all(|c| c.is_alphanumeric()));
+    }
+
+    #[test]
+    fn test_try_from_fails_for_longer_strings() {
+        let result = Token::try_from("1234567");
+        assert!(result.is_err());
+    }
+}

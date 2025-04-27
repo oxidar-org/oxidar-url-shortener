@@ -82,7 +82,7 @@ async fn register_url(
 
 #[shuttle_runtime::main]
 async fn main() -> shuttle_axum::ShuttleAxum {
-    color_eyre::install().unwrap();
+    color_eyre::install().expect("Failed to install color_eyre");
 
     let state = Arc::new(Mutex::new(AppState::default()));
     let router = Router::new()
