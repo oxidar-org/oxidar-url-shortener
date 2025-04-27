@@ -1,4 +1,5 @@
 mod store;
+mod token;
 
 use axum::{
     extract::{Path, Request, State},
@@ -12,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use store::{Store, StoreAccess};
 use url::Url;
 
+#[derive(Default)]
 struct AppState {
     pub store: Store,
 }
@@ -73,7 +75,7 @@ async fn register_url(
     drop(state);
 
     let resolved = base_url
-        .join(&token)
+        .join(token.as_str())
         .map_err(|_| http::StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(resolved.to_string())
 }
@@ -82,12 +84,11 @@ async fn register_url(
 async fn main() -> shuttle_axum::ShuttleAxum {
     color_eyre::install().unwrap();
 
-    let state = Arc::new(Mutex::new(AppState {
-        store: Store::new(),
-    }));
+    let state = Arc::new(Mutex::new(AppState::default()));
     let router = Router::new()
         .route("/{token}", get(resolve_url))
         .route("/", post(register_url))
         .with_state(state);
+
     Ok(router.into())
 }

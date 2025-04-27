@@ -1,43 +1,29 @@
+use crate::token::Token;
 use color_eyre::eyre::{eyre, Result};
-use rand::Rng;
 use std::collections::HashMap;
 use url::Url;
 
+#[derive(Default)]
 pub struct Store {
-    items: HashMap<String, Url>,
-}
-
-impl Store {
-    pub fn new() -> Self {
-        Self {
-            items: HashMap::new(),
-        }
-    }
-
-    fn generate_token() -> String {
-        rand::rng()
-            .sample_iter(&rand::distr::Alphanumeric)
-            .take(6)
-            .map(char::from)
-            .collect()
-    }
+    items: HashMap<Token, Url>,
 }
 
 pub trait StoreAccess {
-    fn register_url(&mut self, url: Url) -> Result<String>;
+    fn register_url(&mut self, url: Url) -> Result<Token>;
     fn resolve_token(&self, token: &str) -> Result<Url>;
 }
 
 impl StoreAccess for Store {
-    fn register_url(&mut self, url: Url) -> Result<String> {
-        let token = Self::generate_token();
+    fn register_url(&mut self, url: Url) -> Result<Token> {
+        let token = Token::default();
         self.items.insert(token.clone(), url);
         Ok(token)
     }
 
     fn resolve_token(&self, token: &str) -> Result<Url> {
+        let token = Token::try_from(token)?;
         self.items
-            .get(token)
+            .get(&token)
             .cloned()
             .ok_or_else(|| eyre!("Token not found"))
     }
