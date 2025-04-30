@@ -1,5 +1,6 @@
 use color_eyre::eyre::{self, eyre, Result};
 use rand::Rng;
+use std::fmt::{self, Display};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token(String);
@@ -12,6 +13,12 @@ impl Default for Token {
             .map(char::from)
             .collect();
         Self(str)
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 

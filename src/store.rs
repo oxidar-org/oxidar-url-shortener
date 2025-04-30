@@ -17,6 +17,8 @@ impl StoreAccess for Store {
     fn register_url(&mut self, url: Url) -> Result<Token> {
         let token = Token::default();
         self.items.insert(token.clone(), url);
+
+        tracing::info!("Registered a new token: {token}");
         Ok(token)
     }
 
