@@ -8,7 +8,7 @@ pub struct Store {
     items: HashMap<Token, Url>,
 }
 
-pub trait StoreAccess {
+pub trait StoreAccess: Send {
     fn register_url(&mut self, url: Url) -> Result<Token>;
     fn resolve_token(&self, token: &str) -> Result<Url>;
 }
@@ -18,7 +18,7 @@ impl StoreAccess for Store {
         let token = Token::default();
         self.items.insert(token.clone(), url);
 
-        tracing::info!("Registered a new token: {token}");
+        tracing::info!("Registered a new token para rust peru!!: {token}");
         Ok(token)
     }
 

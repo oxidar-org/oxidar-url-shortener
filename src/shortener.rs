@@ -10,12 +10,28 @@ use color_eyre::eyre::{eyre, Result};
 use std::sync::{Arc, Mutex};
 use url::Url;
 
-#[derive(Default)]
-pub struct AppState {
-    pub store: Store,
+pub fn create_router() -> Router {
+    let state = Arc::new(Mutex::new(AppState::default()));
+    Router::new()
+        .route("/{token}", get(resolve_url))
+        .route("/", post(register_url))
+        .with_state(state)
 }
 
-pub fn extract_base_url(req: &Request) -> Result<Url> {
+struct AppState {
+    pub store: Box<dyn StoreAccess>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            store: Box::new(Store::default()),
+        }
+    }
+}
+
+// Helpers
+fn extract_base_url(req: &Request) -> Result<Url> {
     let headers = req.headers();
 
     // Check for forwarded protocol (https/http)
@@ -35,13 +51,14 @@ pub fn extract_base_url(req: &Request) -> Result<Url> {
         .map_err(|e| eyre!("Failed to parse base URL: {}", e))
 }
 
-pub async fn extract_body_url(req: Request) -> Result<Url> {
+// Routes
+async fn extract_body_url(req: Request) -> Result<Url> {
     let body = axum::body::to_bytes(req.into_body(), usize::MAX).await?;
     let str = std::str::from_utf8(&body)?;
     Url::parse(str).map_err(|e| eyre!("Failed to parse URL: {}", e))
 }
 
-pub async fn resolve_url(
+async fn resolve_url(
     State(state): State<Arc<Mutex<AppState>>>,
     Path(token): Path<String>,
 ) -> Result<Redirect, http::StatusCode> {
@@ -55,7 +72,7 @@ pub async fn resolve_url(
     Ok(Redirect::to(&url))
 }
 
-pub async fn register_url(
+async fn register_url(
     State(state): State<Arc<Mutex<AppState>>>,
     req: Request,
 ) -> Result<String, http::StatusCode> {
@@ -78,19 +95,53 @@ pub async fn register_url(
     Ok(resolved.to_string())
 }
 
-pub fn create_router() -> Router {
-    let state = Arc::new(Mutex::new(AppState::default()));
-    Router::new()
-        .route("/{token}", get(resolve_url))
-        .route("/", post(register_url))
-        .with_state(state)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::token::Token;
     use axum::http::HeaderMap;
+    use axum::response::IntoResponse;
+    use std::collections::HashMap;
     use std::str::FromStr;
+    use std::sync::Mutex;
+
+    // Mock store implementation
+    struct MockStore {
+        urls: Mutex<HashMap<String, Url>>,
+    }
+
+    impl MockStore {
+        fn new() -> Self {
+            Self {
+                urls: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn with_url(self, token: &str, url: Url) -> Self {
+            self.urls.lock().unwrap().insert(token.to_string(), url);
+            self
+        }
+    }
+
+    impl StoreAccess for MockStore {
+        fn register_url(&mut self, url: Url) -> Result<Token> {
+            let token = Token::default();
+            self.urls
+                .lock()
+                .unwrap()
+                .insert(token.as_str().to_string(), url);
+            Ok(token)
+        }
+
+        fn resolve_token(&self, token: &str) -> Result<Url> {
+            self.urls
+                .lock()
+                .unwrap()
+                .get(token)
+                .cloned()
+                .ok_or_else(|| eyre!("Token not found"))
+        }
+    }
 
     #[test]
     fn test_extract_base_url() {
@@ -165,5 +216,78 @@ mod tests {
         assert!(result.is_ok());
         let short_url = result.unwrap();
         assert!(short_url.starts_with("https://example.com/"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_url_with_mock_store() {
+        let mock_store =
+            MockStore::new().with_url("abc123", Url::parse("https://example.com").unwrap());
+        let state = Arc::new(Mutex::new(AppState {
+            store: Box::new(mock_store),
+        }));
+
+        let result = resolve_url(State(state), Path("abc123".to_string())).await;
+        assert!(result.is_ok());
+        let redirect = result.unwrap();
+        let response = redirect.into_response();
+        let headers = response.headers();
+        assert_eq!(headers.get("location").unwrap(), "https://example.com/");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_url_not_found() {
+        let mock_store = MockStore::new();
+        let state = Arc::new(Mutex::new(AppState {
+            store: Box::new(mock_store),
+        }));
+
+        let result = resolve_url(State(state), Path("nonexistent".to_string())).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_register_url_with_mock_store() {
+        let mock_store = MockStore::new();
+        let state = Arc::new(Mutex::new(AppState {
+            store: Box::new(mock_store),
+        }));
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        headers.insert("x-forwarded-host", "example.com".parse().unwrap());
+
+        let mut req = Request::builder()
+            .uri("http://example.com")
+            .body(axum::body::Body::from("https://target.com"))
+            .unwrap();
+        req.headers_mut().extend(headers);
+
+        let result = register_url(State(state), req).await;
+        assert!(result.is_ok());
+        let short_url = result.unwrap();
+        assert!(short_url.starts_with("https://example.com/"));
+    }
+
+    #[tokio::test]
+    async fn test_register_url_invalid_url() {
+        let mock_store = MockStore::new();
+        let state = Arc::new(Mutex::new(AppState {
+            store: Box::new(mock_store),
+        }));
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        headers.insert("x-forwarded-host", "example.com".parse().unwrap());
+
+        let mut req = Request::builder()
+            .uri("http://example.com")
+            .body(axum::body::Body::from("not-a-url"))
+            .unwrap();
+        req.headers_mut().extend(headers);
+
+        let result = register_url(State(state), req).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), http::StatusCode::BAD_REQUEST);
     }
 }
