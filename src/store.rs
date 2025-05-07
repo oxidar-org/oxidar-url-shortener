@@ -18,7 +18,7 @@ impl StoreAccess for Store {
         let token = Token::default();
         self.items.insert(token.clone(), url);
 
-        tracing::info!("Registered a new token para rust peru!!: {token}");
+        tracing::info!("Registered a new token: {token}");
         Ok(token)
     }
 
